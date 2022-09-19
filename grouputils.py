@@ -10,7 +10,7 @@ def getAllPackages():
 allPkgs = getAllPackages()
 config=configparser.RawConfigParser()
 
-def getEnabledPackage(gid) -> list[str]:
+def getEnabledPackage(gid):
     #config=configparser.ConfigParser()
     config.read(os.path.join(os.path.dirname(__file__), "config.ini"))
     enabledtxt = config.get(str(gid),'enabled')
