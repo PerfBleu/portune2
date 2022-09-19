@@ -7,19 +7,29 @@ from hoshino.util import DailyNumberLimiter
 from hoshino import R, Service
 from hoshino.util import pic2b64
 from hoshino.typing import *
-from .pcr.luck_desc import luck_desc as luck_desc1
-from .luck_type import luck_type
-from .df.luck_desc import luck_desc as luck_desc2
-from .genshin.luck_desc import luck_desc as luck_desc3
-from .uma.luck_desc import luck_desc as luck_desc4
+from pcr.luck_desc import luck_desc as luck_desc1
+from luck_type import luck_type
+from df.luck_desc import luck_desc as luck_desc2
+from genshin.luck_desc import luck_desc as luck_desc3
+from uma.luck_desc import luck_desc as luck_desc4
 from PIL import Image, ImageDraw, ImageFont
-import configparser
-from .grouputils import *
+from grouputils import *
 
 
 
 descDict = {'pcr':luck_desc1,'th':luck_desc2,'genshin':luck_desc3,'uma':luck_desc4}
 luck_desc_list = [luck_desc1,luck_desc2,luck_desc3,luck_desc4]
+
+themeMap={
+    'pcr':luck_desc1,
+    '公主链接':luck_desc1,
+    'th':luck_desc2,
+    '东方':luck_desc2,
+    'genshin':luck_desc3,
+    '原神':luck_desc3,
+    'uma':luck_desc4,
+    '赛马娘':luck_desc4,
+}
 
 sv_help = '''
 [抽签|人品|运势|抽凯露签]
@@ -32,6 +42,8 @@ sv = Service('portune', help_=sv_help, bundle='pcr娱乐')
 lmt = DailyNumberLimiter(1)
 #设置每日抽签的次数，默认为1
 Data_Path = hoshino.config.RES_DIR
+
+result = {}
 
 #获取底图存放路径
 def get_img_path(desc):
@@ -46,7 +58,7 @@ def get_img_path(desc):
         Img_Path = 'portunedata/imgbase/uma'
     return Img_Path
 
-@sv.on_prefix(('portune启用'))
+@sv.on_prefix(['portune启用','运势主题启用'])
 async def portuneEnable(bot, ev):
     rawMessage = ev.raw_message
     content=rawMessage.split()
@@ -65,9 +77,9 @@ async def portuneEnable(bot, ev):
         msg = f'已启用{content[1]},当前已启用的包：{enabledPkgTxt}'
     else:
         msg = '您要启用的包名不存在或者输入不合法，请注意指令与参数之间需要空格'
-    await bot.send(ev,msg) 
+    await bot.send(ev,msg)
 
-@sv.on_prefix(('portune禁用'))
+@sv.on_prefix(['portune禁用','运势主题禁用'])
 async def portuneDisable(bot, ev):
     rawMessage = ev.raw_message
     content=rawMessage.split()
@@ -86,9 +98,9 @@ async def portuneDisable(bot, ev):
         msg = f'此包未启用'
     else:
         msg = '您要禁用的包名不存在或者输入不合法，请注意指令与参数之间需要空格'
-    await bot.send(ev,msg) 
+    await bot.send(ev,msg)
 
-@sv.on_fullmatch(('portunels'))
+@sv.on_fullmatch(['portunels','运势主题列表'])
 async def portunels(bot, ev):
     #config=configparser.ConfigParser()
     config.read(os.path.join(os.path.dirname(__file__), "config.ini"))
@@ -98,41 +110,44 @@ async def portunels(bot, ev):
     else:
         msg = '当前启用的包：'+msg
     msg += f'\n所有可用的包：{allPkgs}'
-    await bot.send(ev,msg) 
+    await bot.send(ev,msg)
 
-@sv.on_prefix(('运势','抽签'), only_to_me=False)
+@sv.on_rex(r'^(?P<type>.*?)[运抽][势签]$')
 async def portune(bot, ev):
     if not checkIfGroupExists(ev.group_id):
         addGroupSection(ev.group_id)
-    uid = ev.user_id
-    if not lmt.check(uid):
-        await bot.finish(ev, f'你今天已经抽过签了，欢迎明天再来~', at_sender=True)
-    lmt.increase(uid)
-    pic = drawing_pic(ev.group_id)
-    await bot.send(ev, pic, at_sender=True)
 
-def drawing_pic(gid) -> Image:
+    keyword = ev['match'].group('type')
+    uid = ev.user_id
+    gid = ev.group_id
+
+    pic = drawing_pic(gid, uid, keyword)
+    num = result[uid]['luck_num']
+    await bot.send(ev, f'你今天人品为 {num} {pic}', at_sender=True)
+
+@sv.on_prefix(['今日人品','测人品','jrrp', '人品'], only_to_me=False)
+async def portuneNum(bot, ev):
+    if not checkIfGroupExists(ev.group_id):
+        addGroupSection(ev.group_id)
+
+    uid = ev.user_id
+    gid = ev.group_id
+    createMemberResult(gid, uid)
+
+    num = result[uid]['luck_num']
+    await bot.send(ev, f'你今天人品为 {num}', at_sender=True)
+
+def drawing_pic(gid, uid,  keyword) -> Image:
     fontPath = {
         'title': R.img('portunedata/font/Mamelon.otf').path,
         'text': R.img('portunedata/font/sakura.ttf').path
     }
 
-    enabledPkgs = getEnabledPackage(gid)
-    enabledDescList = []
-    for pkg in enabledPkgs:
-        enabledDescList.append(descDict[pkg])
-
-    luck_desc = random.choice(enabledDescList)
-    base_img = random_Basemap(luck_desc)
-
-    filename = os.path.basename(base_img.path)
-    charaid = filename.lstrip('frame_')
-    charaid = charaid[:-4]
+    base_img, text, title = createMemberResult(gid, uid, keyword)
 
     img = base_img.open()
     # Draw title
     draw = ImageDraw.Draw(img)
-    text, title = get_info(charaid,luck_desc)
 
     text = text['content']
     font_size = 45
@@ -149,12 +164,12 @@ def drawing_pic(gid) -> Image:
     ttfront = ImageFont.truetype(fontPath['text'], font_size)
     result = decrement(text)
     if not result[0]:
-        return Exception('Unknown error in daily luck') 
+        return Exception('Unknown error in daily luck')
     textVertical = []
     for i in range(0, result[0]):
         font_height = len(result[i + 1]) * (font_size + 4)
         textVertical = vertical(result[i + 1])
-        x = int(image_font_center[0] + (result[0] - 2) * font_size / 2 + 
+        x = int(image_font_center[0] + (result[0] - 2) * font_size / 2 +
                 (result[0] - 1) * 4 - i * (font_size + 4))
         y = int(image_font_center[1] - font_height / 2)
         draw.text((x, y), textVertical, fill = color, font = ttfront)
@@ -169,19 +184,28 @@ def random_Basemap(desc) -> R.ResImg:
     random_img = random.choice(os.listdir(base_dir))
     return R.img(os.path.join(Img_Path, random_img))
 
-def get_info(charaid,luck_desc):
+def get_info(charaid, luck_desc, uid=None):
     for i in luck_desc:
         if charaid in i['charaid']:
             typewords = i['type']
-            desc = random.choice(typewords)
-            return desc, get_luck_type(desc)
+            if uid is None:
+                desc = random.choice(typewords)
+                return desc, get_luck_type(desc)
+            else:
+                desc = { 'content': '' }
+                for word in typewords:
+                    if result[uid]['desc']['good-luck'] == word['good-luck']:
+                        desc = word
+                if not desc['content']:
+                    desc = { 'content': f"今天的运势是{result[uid]['title']}"}
+                return desc, {}
     raise Exception('luck description not found')
 
 def get_luck_type(desc):
     target_luck_type = desc['good-luck']
     for i in luck_type:
         if i['good-luck'] == target_luck_type:
-            return i['name']
+            return i
     raise Exception('luck type not found')
 
 def decrement(text):
@@ -221,3 +245,60 @@ def vertical(str):
         list.append(s)
     return '\n'.join(list)
 
+def createMemberResult(gid, uid, type=None):
+    check =lmt.check(uid)
+    isResult =uid in result
+    if not isResult:
+        check = True
+
+    if check:
+        lmt.increase(uid)
+
+        enabledPkgs = getEnabledPackage(gid)
+        enabledDescList = []
+        for pkg in enabledPkgs:
+            enabledDescList.append(descDict[pkg])
+
+        theme = random.choice(enabledDescList)
+        if not type:
+            if theme == luck_desc1:
+                type =  'pcr'
+            elif theme == luck_desc2:
+                type =  '东方'
+            elif theme == luck_desc3:
+                type =  '原神'
+            elif theme == luck_desc4:
+                type =  '赛马娘'
+        else:
+            theme = themeMap[type]
+
+        base_img = random_Basemap(theme)
+
+        filename = os.path.basename(base_img.path)
+        charaid = filename.lstrip('frame_')
+        charaid = charaid[:-4]
+
+        desc, luck_type = get_info(charaid, theme)
+
+        result[uid] = {
+            'type': type,
+            'base_img': base_img,
+            'desc': desc,
+            'title': luck_type['name'],
+            'luck_num':  random.randint(luck_type['range'][0], luck_type['range'][1]),
+        }
+    else:
+        if not type:
+            return result[uid]['base_img'], result[uid]['desc'], result[uid]['title']
+        else:
+            if type == result[uid]['type']:
+                return result[uid]['base_img'], result[uid]['desc'], result[uid]['title']
+            else:
+                theme = themeMap[type]
+                base_img = random_Basemap(theme)
+                filename = os.path.basename(base_img.path)
+                charaid = filename.lstrip('frame_')
+                charaid = charaid[:-4]
+                desc, luck_type = get_info(charaid, theme, uid)
+                return base_img, desc, result[uid]['title']
+    return base_img, desc, luck_type['name']
