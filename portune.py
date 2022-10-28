@@ -7,13 +7,13 @@ from hoshino.util import DailyNumberLimiter
 from hoshino import R, Service
 from hoshino.util import pic2b64
 from hoshino.typing import *
-from pcr.luck_desc import luck_desc as luck_desc1
-from luck_type import luck_type
-from df.luck_desc import luck_desc as luck_desc2
-from genshin.luck_desc import luck_desc as luck_desc3
-from uma.luck_desc import luck_desc as luck_desc4
+from .pcr.luck_desc import luck_desc as luck_desc1
+from .luck_type import luck_type
+from .df.luck_desc import luck_desc as luck_desc2
+from .genshin.luck_desc import luck_desc as luck_desc3
+from .uma.luck_desc import luck_desc as luck_desc4
 from PIL import Image, ImageDraw, ImageFont
-from grouputils import *
+from .grouputils import *
 
 
 
